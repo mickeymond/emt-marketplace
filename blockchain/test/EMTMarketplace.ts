@@ -16,7 +16,7 @@ describe("EMTMarketplace", function () {
     await stableCoin.mint(member.address, ethers.parseUnits("1000000", await stableCoin.decimals()));
 
     const EMTMarketplace = await ethers.getContractFactory("EMTMarketplace");
-    const emtMarketplace = await upgrades.deployProxy(EMTMarketplace, [owner.address]);
+    const emtMarketplace = await upgrades.deployProxy(EMTMarketplace, [owner.address, stableCoin.target]);
     await emtMarketplace.setExptLevel(1, 1000, 50);
     await emtMarketplace.setExptLevel(2, 3000, 100);
     await emtMarketplace.setExptLevel(3, 5000, 200);

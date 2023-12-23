@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: APACHE
 pragma solidity ^0.8.20;
 
+import "@opengsn/contracts/src/ERC2771Recipient.sol";
 // import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -9,7 +10,11 @@ import "./MentorToken.sol";
 import "./ExpertToken.sol";
 
 /// @custom:security-contact odafe@mowblox.com
-contract EMTMarketplace is Initializable, AccessControlUpgradeable {
+contract EMTMarketplace is
+    Initializable,
+    AccessControlUpgradeable,
+    ERC2771Recipient
+{
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     struct MemberVote {
         bool upVoted;
@@ -70,13 +75,38 @@ contract EMTMarketplace is Initializable, AccessControlUpgradeable {
         _disableInitializers();
     }
 
+    /// @inheritdoc IERC2771Recipient
+    function _msgSender()
+        internal
+        view
+        virtual
+        override(ContextUpgradeable, ERC2771Recipient)
+        returns (address ret)
+    {
+        return ERC2771Recipient._msgSender();
+    }
+
+    /// @inheritdoc IERC2771Recipient
+    function _msgData()
+        internal
+        view
+        virtual
+        override(ContextUpgradeable, ERC2771Recipient)
+        returns (bytes calldata ret)
+    {
+        return ERC2771Recipient._msgData();
+    }
+
     /**
      * @dev Grants defaultAdmin & pauser roles.
      */
-    function initialize(address defaultAdmin) public initializer {
+    function initialize(
+        address defaultAdmin,
+        address forwarder
+    ) public initializer {
         __AccessControl_init();
-
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin);
+        _setTrustedForwarder(forwarder);
         // Set Initial Values
         upVoteMultiplier = 10;
         downVoteMultiplier = 5;
@@ -241,10 +271,10 @@ contract EMTMarketplace is Initializable, AccessControlUpgradeable {
         ContentVote storage _contentVote = _contentVotes[_id];
         // Check if no creator has been set already
         require(_contentVote.creator == address(0), "Creator already exists!");
-        // Set msg.sender as creater
-        _contentVote.creator = msg.sender;
+        // Set _msgSender() as creater
+        _contentVote.creator = _msgSender();
         // Emit Event
-        emit ContentAdded(msg.sender, _id);
+        emit ContentAdded(_msgSender(), _id);
     }
 
     /**
@@ -258,36 +288,36 @@ contract EMTMarketplace is Initializable, AccessControlUpgradeable {
             _contentVote.creator != address(0),
             "Voting not allowed for content without creator!"
         );
-        // Check if msg.sender has not upvoted
+        // Check if _msgSender() has not upvoted
         require(
-            !_contentVote.memberVotes[msg.sender].upVoted,
+            !_contentVote.memberVotes[_msgSender()].upVoted,
             "Member has already up voted!"
         );
         // Retrieve Creator Vote
         CreatorVote storage _creatorVote = _creatorVotes[_contentVote.creator];
         // Check If Claim Rules Prevents Member from voting
         require(
-            _contentVote.memberVotes[msg.sender].lastVotedAt == 0 ||
+            _contentVote.memberVotes[_msgSender()].lastVotedAt == 0 ||
                 _creatorVote.lastClaimedAt == 0 ||
                 (_creatorVote.lastClaimedAt <
-                    _contentVote.memberVotes[msg.sender].lastVotedAt),
+                    _contentVote.memberVotes[_msgSender()].lastVotedAt),
             "Cannot Vote Again Due to Claim Rules!"
         );
         // Reverse if member has already downvoted
-        if (_contentVote.memberVotes[msg.sender].downVoted) {
+        if (_contentVote.memberVotes[_msgSender()].downVoted) {
             // Decrement Creator & Content Down Votes
             _creatorVote.downVotes--;
             _contentVote.downVotes--;
             // Update Member Down Voted
-            _contentVote.memberVotes[msg.sender].downVoted = false;
+            _contentVote.memberVotes[_msgSender()].downVoted = false;
         }
         // Increment Creator & Content Up Votes
         _creatorVote.upVotes++;
         _contentVote.upVotes++;
         // Update Member Up Voted
-        _contentVote.memberVotes[msg.sender].upVoted = true;
+        _contentVote.memberVotes[_msgSender()].upVoted = true;
         // Update Member Last Voted
-        _contentVote.memberVotes[msg.sender].lastVotedAt = block.number;
+        _contentVote.memberVotes[_msgSender()].lastVotedAt = block.number;
         // Emit Event
         emit ContentUpVoted(_id, _contentVote.upVotes);
     }
@@ -303,36 +333,36 @@ contract EMTMarketplace is Initializable, AccessControlUpgradeable {
             _contentVote.creator != address(0),
             "Voting not allowed for content without creator!"
         );
-        // Check if msg.sender has not downvoted the content
+        // Check if _msgSender() has not downvoted the content
         require(
-            !_contentVote.memberVotes[msg.sender].downVoted,
+            !_contentVote.memberVotes[_msgSender()].downVoted,
             "Member has already down voted!"
         );
         // Retrieve Creator Vote
         CreatorVote storage _creatorVote = _creatorVotes[_contentVote.creator];
         // Check If Claim Rules Prevents Member from voting
         require(
-            _contentVote.memberVotes[msg.sender].lastVotedAt == 0 ||
+            _contentVote.memberVotes[_msgSender()].lastVotedAt == 0 ||
                 _creatorVote.lastClaimedAt == 0 ||
                 (_creatorVote.lastClaimedAt <
-                    _contentVote.memberVotes[msg.sender].lastVotedAt),
+                    _contentVote.memberVotes[_msgSender()].lastVotedAt),
             "Cannot Vote Again Due to Claim Rules!"
         );
         // Reverse if member has already upvoted
-        if (_contentVote.memberVotes[msg.sender].upVoted) {
+        if (_contentVote.memberVotes[_msgSender()].upVoted) {
             // Decrement Creator & Content Up Votes
             _creatorVote.upVotes--;
             _contentVote.upVotes--;
             // Update Member Up Voted
-            _contentVote.memberVotes[msg.sender].upVoted = false;
+            _contentVote.memberVotes[_msgSender()].upVoted = false;
         }
         // Increment Creator & Content Down Votes
         _creatorVote.downVotes++;
         _contentVote.downVotes++;
         // Update Member Down Voted
-        _contentVote.memberVotes[msg.sender].downVoted = true;
+        _contentVote.memberVotes[_msgSender()].downVoted = true;
         // Update Member Last Voted
-        _contentVote.memberVotes[msg.sender].lastVotedAt = block.number;
+        _contentVote.memberVotes[_msgSender()].lastVotedAt = block.number;
         // Emit Event
         emit ContentDownVoted(_id, _contentVote.downVotes);
     }
@@ -344,7 +374,7 @@ contract EMTMarketplace is Initializable, AccessControlUpgradeable {
         // Ensure mentTokenAddress is not the zero address
         require(mentTokenAddress != address(0), "MENT claiming is disabled!");
         // Retrieve Creator Vote
-        CreatorVote storage _creatorVote = _creatorVotes[msg.sender];
+        CreatorVote storage _creatorVote = _creatorVotes[_msgSender()];
         // Compute claimable MENT
         int256 _claimableMent = ((int256(_creatorVote.upVotes) -
             int256(_creatorVote.lastClaimedUpVotes)) *
@@ -355,13 +385,16 @@ contract EMTMarketplace is Initializable, AccessControlUpgradeable {
         // Check if Content Vote has votes to claim
         require(_claimableMent > 0, "No MENT to claim!");
         // Mint MENT Tokens for Creator
-        MentorToken(mentTokenAddress).mint(msg.sender, uint256(_claimableMent));
+        MentorToken(mentTokenAddress).mint(
+            _msgSender(),
+            uint256(_claimableMent)
+        );
         // Update Content Last Claimed, UpVotes & DownVotes
         _creatorVote.lastClaimedAt = block.number;
         _creatorVote.lastClaimedUpVotes = _creatorVote.upVotes;
         _creatorVote.lastClaimedDownVotes = _creatorVote.downVotes;
         // Emit Event
-        emit MentClaimed(msg.sender, uint256(_claimableMent));
+        emit MentClaimed(_msgSender(), uint256(_claimableMent));
     }
 
     /**
@@ -374,29 +407,29 @@ contract EMTMarketplace is Initializable, AccessControlUpgradeable {
         ExptLevel storage _exptLevel = exptLevels[_level];
         // Check if expt level exists
         require(_exptLevel.requiredMent > 0, "Expt Level does not exists!");
-        // Get msg.sender MENT balance
+        // Get _msgSender() MENT balance
         uint256 _mentBalance = MentorToken(mentTokenAddress).balanceOf(
-            msg.sender
+            _msgSender()
         );
-        // check if msg.sender is qualified for the level
+        // check if _msgSender() is qualified for the level
         require(
             _mentBalance >= _exptLevel.requiredMent,
             "Not qualified for level!"
         );
         // check if there is a difference in EXPT to be claimed
         require(
-            _exptLevel.receivableExpt > _creatorTickets[msg.sender],
+            _exptLevel.receivableExpt > _creatorTickets[_msgSender()],
             "Level has already been claimed!"
         );
         // Calculate remaining quantity to receive
         uint256 _quantity = _exptLevel.receivableExpt -
-            _creatorTickets[msg.sender];
-        // Mint EXPT for msg.sender
-        ExpertToken(exptTokenAddress).mint(msg.sender, _quantity);
+            _creatorTickets[_msgSender()];
+        // Mint EXPT for _msgSender()
+        ExpertToken(exptTokenAddress).mint(_msgSender(), _quantity);
         // Increase _creatorTickets
-        _creatorTickets[msg.sender] = _exptLevel.receivableExpt;
+        _creatorTickets[_msgSender()] = _exptLevel.receivableExpt;
         // Emit Event
-        emit ExptClaimed(msg.sender, _quantity);
+        emit ExptClaimed(_msgSender(), _quantity);
     }
 
     /**
@@ -415,7 +448,7 @@ contract EMTMarketplace is Initializable, AccessControlUpgradeable {
         // Require this isApproval for all EXPTs
         require(
             ExpertToken(exptTokenAddress).isApprovedForAll(
-                msg.sender,
+                _msgSender(),
                 address(this)
             ),
             "Marketplace Is Not Approval For All!"
@@ -423,19 +456,19 @@ contract EMTMarketplace is Initializable, AccessControlUpgradeable {
         for (uint256 i = 0; i < _tokenIds.length; i++) {
             // Transfer _tokenIds[i] to this
             ExpertToken(exptTokenAddress).transferFrom(
-                msg.sender,
+                _msgSender(),
                 address(this),
                 _tokenIds[i]
             );
             // Add _tokenIds[i] to marketplace offers
             exptOffers[_tokenIds[i]] = ExptOffer(
-                msg.sender,
+                _msgSender(),
                 _tokenIds[i],
                 _stablecoin,
                 _amount
             );
             // Emit event
-            emit ExptDeposited(msg.sender, _tokenIds[i]);
+            emit ExptDeposited(_msgSender(), _tokenIds[i]);
         }
     }
 
@@ -450,10 +483,10 @@ contract EMTMarketplace is Initializable, AccessControlUpgradeable {
             require(_owner == address(this), "No deposit yet for token id!");
             // Retrieve Expt Offer
             ExptOffer storage _exptOffer = exptOffers[_tokenId];
-            // Check if msg.sender has approved amount of payment token to this
+            // Check if _msgSender() has approved amount of payment token to this
             require(
                 ERC20(_exptOffer.stablecoin).allowance(
-                    msg.sender,
+                    _msgSender(),
                     address(this)
                 ) >= _exptOffer.amount,
                 "Insufficient payment token allowance for marketplace!"
@@ -461,24 +494,24 @@ contract EMTMarketplace is Initializable, AccessControlUpgradeable {
             // Deduct Fees for EMT Marketplace @ 2%
             uint256 _fees = (_exptOffer.amount * exptBuyFeePercent) / 100;
             ERC20(_exptOffer.stablecoin).transferFrom(
-                msg.sender,
+                _msgSender(),
                 address(this),
                 _fees
             );
             // Transfer payment token to seller
             ERC20(_exptOffer.stablecoin).transferFrom(
-                msg.sender,
+                _msgSender(),
                 _exptOffer.owner,
                 _exptOffer.amount - _fees
             );
             // Transfer expt token to buyer
             ExpertToken(exptTokenAddress).transferFrom(
                 address(this),
-                msg.sender,
+                _msgSender(),
                 _tokenId
             );
             // Emit event
-            emit ExptBought(msg.sender, _tokenId);
+            emit ExptBought(_msgSender(), _tokenId);
         } catch Error(string memory reason) {
             revert(reason);
         }
@@ -494,19 +527,19 @@ contract EMTMarketplace is Initializable, AccessControlUpgradeable {
             require(_owner == address(this), "No deposit yet for token id!");
             // Retrieve Expt Offer
             ExptOffer storage _exptOffer = exptOffers[_tokenId];
-            // check if msg.sender is seller or owner
+            // check if _msgSender() is seller or owner
             require(
-                msg.sender == _exptOffer.owner,
+                _msgSender() == _exptOffer.owner,
                 "Not eligible to withdraw EXPT!"
             );
-            // transfer expt back to msg.sender
+            // transfer expt back to _msgSender()
             ExpertToken(exptTokenAddress).transferFrom(
                 address(this),
-                msg.sender,
+                _msgSender(),
                 _tokenId
             );
             // emit event
-            emit ExptWithdrawn(msg.sender, _tokenId);
+            emit ExptWithdrawn(_msgSender(), _tokenId);
         } catch Error(string memory reason) {
             revert(reason);
         }

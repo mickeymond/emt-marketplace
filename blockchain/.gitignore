@@ -9,6 +9,9 @@ typechain-types
 cache
 artifacts
 
+# GSN Files
+build
+
 # OpenZeppelin
 .openzeppelin/dev-*.json
 .openzeppelin/.session
